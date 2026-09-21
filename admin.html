@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AltDrive Admin</title>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root { --primary: #ea580c; --card-bg: #ffffff; --text: #0f172a; --border: #e2e8f0; }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: #f8fafc; color: var(--text); padding-bottom: 60px; }
+    header { background-color: var(--card-bg); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+    header h1 { font-size: 18px; font-weight: 700; color: var(--text); }
+    nav { display: flex; gap: 10px; flex-wrap: wrap; }
+    nav button { background: none; border: 1px solid var(--border); padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; }
+    nav button.active { background-color: var(--primary); color: #ffffff; border-color: var(--primary); }
+    #signOutBtn { background:#f1f5f9; border:1px solid #cbd5e1; padding:8px 14px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer; }
+    .container { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    h2 { font-size: 18px; margin-bottom: 16px; color: var(--text); }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom:12px; }
+    .form-group label { font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #334155; display:block; }
+    input, select { padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; outline: none; width:100%; }
+    .btn-submit { background-color: var(--primary); color: #ffffff; border: none; padding: 10px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; }
+    .btn-action { background-color: #f1f5f9; color: #0f172a; border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer; text-decoration: none; display:inline-block; margin:2px; }
+    .btn-print { background-color: #0f172a; color: #ffffff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; margin-bottom: 16px; }
+    .filter-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+    .analytics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    .stat-card { background: #f8fafc; padding: 16px; border: 1px solid var(--border); border-radius: 8px; text-align: center; }
+    .stat-value { font-size: 24px; font-weight: 700; color: var(--primary); }
+    .stat-label { font-size: 11px; color: #64748b; font-weight: 600; text-transform:uppercase; margin-top:4px; }
+    .chart-container { max-width: 300px; margin: 0 auto 24px auto; height: 200px; }
+    .table-container { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; white-space: nowrap; }
+    th, td { padding: 10px; border-bottom: 1px solid var(--border); }
+    th { background-color: #f1f5f9; font-weight: 600; }
+    .badge { padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .badge-pending { background-color: #fef08a; color: #854d0e; }
+    .badge-paid { background-color: #dcfce7; color: #166534; }
+    .badge-fail { background-color: #fee2e2; color: #991b1b; }
+    .ledger-block { border: 1px solid #cbd5e1; border-radius: 6px; margin-bottom: 24px; background: #ffffff; }
+    .ledger-header { background: #f8fafc; padding: 12px 16px; border-bottom: 1px solid #cbd5e1; font-weight: 600; font-size: 13px; display: flex; align-items: center; }
+    .hidden { display: none !important; }
+    .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #0f172a; color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 13px; z-index: 300; opacity: 0; transition: opacity .2s; }
+    .toast.show { opacity: 1; }
+    #loginScreen { min-height:100vh; display:none; align-items:center; justify-content:center; }
+    #loginBox { background:#fff; border:1px solid var(--border); border-radius:10px; padding:26px; max-width:340px; width:100%; }
+    .modal-overlay { position: fixed; inset:0; background: rgba(15,23,42,0.5); display:flex; align-items:center; justify-content:center; z-index:200; padding:16px; }
+    .modal-box { background:#fff; border-radius:10px; padding:22px; width:100%; max-width:360px; }
+    @media print { body * { visibility: hidden; } #print-area, #print-area * { visibility: visible; } #print-area { position: absolute; left: 0; top: 0; width: 100%; } header, nav, .btn-print, .btn-action, .card > div:first-child, .ledger-header input { display: none !important; } @page { size: A4 landscape; margin: 15mm; } }
+  </style>
+</head>
+<body>
+
+<div id="loginScreen">
+  <div id="loginBox">
+    <h2 style="margin-bottom:6px;">Admin Sign In</h2>
+    <div style="margin-bottom:14px;"><label style="font-size:12px;font-weight:600;">Email</label><input type="email" id="loginEmail"></div>
+    <div style="margin-bottom:14px;"><label style="font-size:12px;font-weight:600;">Password</label><input type="password" id="loginPassword"></div>
+    <div id="loginError" style="display:none; color:#b91c1c; font-size:12px; margin-bottom:10px;"></div>
+    <button class="btn-submit" id="loginBtn" style="width:100%;">Sign in</button>
+  </div>
+</div>
+
+<div id="mainApp" class="hidden">
+  <header>
+    <h1>AltDrive Admin</h1>
+    <nav>
+      <button id="nav-dashboard" class="active" onclick="switchTab('dashboard')">Analytics & Records</button>
+      <button id="nav-unpaid" onclick="switchTab('unpaid')">Unpaid Ledger</button>
+      <button id="nav-settings" onclick="switchTab('settings')">Agent Contacts</button>
+    </nav>
+    <button id="signOutBtn" onclick="doSignOut()">Sign out</button>
+  </header>
+
+  <div class="container">
+    <div id="tab-dashboard" class="card">
+      <div class="chart-container"><canvas id="agentChart"></canvas></div>
+      <div class="analytics-grid">
+        <div class="stat-card"><div class="stat-value" id="stat-total">0</div><div class="stat-label">Total Logs</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-cars45">0</div><div class="stat-label">Cars45</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-legit">0</div><div class="stat-label">LegitCar</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-agnate">0</div><div class="stat-label">AGNATE</div></div>
+      </div>
+
+      <div class="filter-bar">
+        <input type="text" id="searchFilter" placeholder="Search chassis, brand..." oninput="renderDashboard()" style="width:200px;">
+        <select id="agentFilter" onchange="renderDashboard()" style="width:150px;">
+          <option value="">All Agents</option><option value="Cars45">Cars45</option><option value="LegitCar Limited">LegitCar</option><option value="AGNATE services">AGNATE</option>
+        </select>
+      </div>
+      
+      <div class="table-container">
+        <table>
+          <thead><tr><th>Date</th><th>RM</th><th>Vehicle</th><th>State</th><th>Agent</th><th>Status</th><th>Pay Status</th><th>Actions</th></tr></thead>
+          <tbody id="records-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="tab-unpaid" class="card hidden">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h2>Unpaid Inspections Ledger</h2>
+        <div>
+          <button class="btn-action" onclick="processBatchPayments()">Mark Selected Paid</button>
+          <button class="btn-print" onclick="window.print()">Export PDF</button>
+          <button class="btn-action" onclick="exportLedgerExcel()">Export Excel</button>
+        </div>
+      </div>
+      <div id="print-area"><div id="ledger-entries"></div></div>
+    </div>
+
+    <div id="tab-settings" class="card hidden">
+      <h2>Agent Automation Contacts</h2>
+      <div id="agentContactsForm"></div>
+      <button class="btn-submit" onclick="saveAgentContactsForm()" style="margin-top:12px;">Save Contacts</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyC6MYZewYVN6sreX7RlLjUrUBKQL72nzzo",
+    authDomain: "altdrive-inspections.firebaseapp.com",
+    projectId: "altdrive-inspections"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+
+  const agentProfiles = {
+    "Cars45": { fee: 20000, bank: "WEMA BANK", account: "7256734484", ledgerName: "CARS45" },
+    "LegitCar Limited": { fee: 30000, bank: "ALTBANK", account: "0510166013", ledgerName: "LEGITRON LTD" },
+    "AGNATE services": { fee: 35000, bank: "STERLING BANK", account: "0501272400", ledgerName: "AGNATE LIMITED" }
+  };
+
+  let records = [];
+  let agentContacts = { "Cars45": {email:""}, "LegitCar Limited": {email:""}, "AGNATE services": {email:""} };
+  let chartInstance = null;
+
+  function toast(msg){ const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 2200); }
+
+  async function loadAllData() {
+    const doc = await db.collection('settings').doc('agent_contacts').get();
+    if (doc.exists) agentContacts = doc.data();
+    renderAgentContactsForm();
+
+    db.collection('inspections').orderBy('requestDate', 'desc').onSnapshot(snapshot => {
+      records = [];
+      snapshot.forEach(doc => records.push({ id: doc.id, ...doc.data() }));
+      renderDashboard();
+      renderUnpaidLedger();
+    });
+  }
+
+  function switchTab(tabName) {
+    ['dashboard','unpaid','settings'].forEach(t=>{
+      document.getElementById('tab-'+t).classList.add('hidden');
+      document.getElementById('nav-'+t).classList.remove('active');
+    });
+    document.getElementById('tab-'+tabName).classList.remove('hidden');
+    document.getElementById('nav-'+tabName).classList.add('active');
+  }
+
+  async function updateStatus(id, field, value) {
+    await db.collection('inspections').doc(id).update({ [field]: value });
+    toast('Record updated');
+  }
+
+  async function processBatchPayments() {
+    const checkboxes = document.querySelectorAll('.batch-pay-checkbox:checked');
+    if (checkboxes.length === 0) return toast('No records selected.');
+    const batch = db.batch();
+    checkboxes.forEach(box => { batch.update(db.collection('inspections').doc(box.value), { paymentStatus: 'Paid' }); });
+    await batch.commit();
+    toast(`${checkboxes.length} records marked as paid.`);
+  }
+
+  function renderDashboard() {
+    const searchTerm = document.getElementById("searchFilter").value.toLowerCase();
+    const agentFilter = document.getElementById("agentFilter").value;
+
+    const filteredRecords = records.filter(r => {
+      const matchesSearch = !searchTerm || r.chassis.toLowerCase().includes(searchTerm) || r.vehicleBrand.toLowerCase().includes(searchTerm);
+      const matchesAgent = !agentFilter || r.agent === agentFilter;
+      return matchesSearch && matchesAgent;
+    });
+
+    const c45Count = filteredRecords.filter(r => r.agent === "Cars45").length;
+    const legitCount = filteredRecords.filter(r => r.agent === "LegitCar Limited").length;
+    const agnateCount = filteredRecords.filter(r => r.agent === "AGNATE services").length;
+
+    document.getElementById("stat-total").innerText = filteredRecords.length;
+    document.getElementById("stat-cars45").innerText = c45Count;
+    document.getElementById("stat-legit").innerText = legitCount;
+    document.getElementById("stat-agnate").innerText = agnateCount;
+
+    if(chartInstance) chartInstance.destroy();
+    const ctx = document.getElementById('agentChart').getContext('2d');
+    chartInstance = new Chart(ctx, {
+      type: 'doughnut',
+      data: { labels: ['Cars45', 'LegitCar', 'AGNATE'], datasets: [{ data: [c45Count, legitCount, agnateCount], backgroundColor: ['#3b82f6', '#10b981', '#f59e0b'] }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+    });
+
+    const tbody = document.getElementById("records-table-body");
+    tbody.innerHTML = "";
+    filteredRecords.forEach(r => {
+      const inspStatus = r.inspectionStatus || "Pending";
+      const payStatus = r.paymentStatus || "Unpaid";
+      
+      let inspBtn = inspStatus === "Pending" ? `<button class="btn-action" onclick="updateStatus('${r.id}', 'inspectionStatus', 'Completed')">Mark Done</button>` : `<button class="btn-action" onclick="updateStatus('${r.id}', 'inspectionStatus', 'Pending')">Mark Undone</button>`;
+      let payBtn = payStatus === "Unpaid" ? `<button class="btn-action" onclick="updateStatus('${r.id}', 'paymentStatus', 'Paid')">Mark Paid</button>` : `<button class="btn-action" onclick="updateStatus('${r.id}', 'paymentStatus', 'Unpaid')">Mark Unpaid</button>`;
+
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${r.requestDate}</td><td>${r.requestorName}</td><td>${r.vehicleBrand} ${r.vehicleModel}</td><td>${r.state}</td><td>${r.agent}</td><td><span class="badge ${inspStatus==='Completed'?'badge-paid':'badge-pending'}">${inspStatus}</span></td><td><span class="badge ${payStatus==='Paid'?'badge-paid':'badge-fail'}">${payStatus}</span></td><td>${inspBtn}${payBtn}</td>`;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderUnpaidLedger() {
+    const unpaid = records.filter(r => r.paymentStatus !== "Paid");
+    const container = document.getElementById("ledger-entries");
+    container.innerHTML = "";
+    unpaid.forEach(r => {
+      const p = agentProfiles[r.agent];
+      const grossRemainder = 40000 - p.fee;
+      const desc = `BNG PAYMENT FOR ${r.vehicleYear} ${r.vehicleBrand.toUpperCase()} ${r.vehicleModel.toUpperCase()}`;
+      
+      const block = document.createElement("div");
+      block.className = "ledger-block";
+      block.innerHTML = `
+        <div class="ledger-header"><input type="checkbox" class="batch-pay-checkbox" value="${r.id}" style="margin-right:12px;">${r.vehicleBrand} ${r.vehicleModel} (${r.chassis}) | ${r.agent}</div>
+        <table>
+          <thead><tr><th>ENTRY</th><th>ACCOUNT</th><th>ACCOUNT NAME</th><th>BANK</th><th>AMOUNT (NGN)</th><th>DESCRIPTION</th></tr></thead>
+          <tbody>
+            <tr><td>Dr</td><td>0505420261</td><td>ALTDRIVE COLLECTION</td><td>ALTBANK</td><td>40,000.00</td><td>${desc}</td></tr>
+            <tr><td>Cr</td><td>${p.account}</td><td>${p.ledgerName}</td><td>${p.bank}</td><td>${p.fee.toLocaleString(undefined,{minimumFractionDigits:2})}</td><td>${desc}</td></tr>
+            <tr><td>Cr</td><td>1/566/430326/0/10</td><td>ALTDRIVE COMMISSION</td><td>-</td><td>${(grossRemainder - Math.round(grossRemainder * 0.02)).toLocaleString(undefined,{minimumFractionDigits:2})}</td><td>BNG COMMISSION</td></tr>
+            <tr><td>Cr</td><td>0511958303</td><td>AMH/SINKING FUND</td><td>-</td><td>${Math.round(grossRemainder * 0.02).toLocaleString(undefined,{minimumFractionDigits:2})}</td><td>BNG SINKING FUND</td></tr>
+          </tbody>
+        </table>`;
+      container.appendChild(block);
+    });
+  }
+
+  function exportLedgerExcel(){
+    const unpaid = records.filter(r => r.paymentStatus !== "Paid");
+    const rows = [];
+    unpaid.forEach(r => {
+      const p = agentProfiles[r.agent];
+      const grossRemainder = 40000 - p.fee;
+      const desc = `BNG PAYMENT FOR ${r.vehicleYear} ${r.vehicleBrand.toUpperCase()} ${r.vehicleModel.toUpperCase()}`;
+      rows.push({ Entry:"Dr", Account:"0505420261", "Account Name":"ALTDRIVE COLLECTION", Bank:"ALTBANK", "Amount (NGN)":40000, Description:desc });
+      rows.push({ Entry:"Cr", Account:p.account, "Account Name":p.ledgerName, Bank:p.bank, "Amount (NGN)":p.fee, Description:desc });
+      rows.push({ Entry:"Cr", Account:"1/566/430326/0/10", "Account Name":"ALTDRIVE COMMISSION", Bank:"-", "Amount (NGN)":(grossRemainder - Math.round(grossRemainder * 0.02)), Description:"BNG COMMISSION" });
+      rows.push({ Entry:"Cr", Account:"0511958303", "Account Name":"AMH/SINKING FUND", Bank:"-", "Amount (NGN)":Math.round(grossRemainder * 0.02), Description:"BNG SINKING FUND" });
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Ledger');
+    XLSX.writeFile(wb, `altdrive-ledger-${new Date().toISOString().split('T')[0]}.xlsx`);
+  }
+
+  function renderAgentContactsForm(){
+    document.getElementById('agentContactsForm').innerHTML = Object.keys(agentProfiles).map(a => `
+      <div class="grid-2"><div class="form-group"><label>${a} Routing Email</label><input type="email" class="contact-email" data-agent="${a}" value="${(agentContacts[a]&&agentContacts[a].email)||''}"></div></div>
+    `).join('');
+  }
+
+  async function saveAgentContactsForm(){
+    document.querySelectorAll('.contact-email').forEach(inp => { agentContacts[inp.dataset.agent] = { email: inp.value.trim() }; });
+    await db.collection('settings').doc('agent_contacts').set(agentContacts);
+    toast('Routing emails saved');
+  }
+
+  document.getElementById('loginBtn').addEventListener('click', async ()=>{
+    try { await auth.signInWithEmailAndPassword(document.getElementById('loginEmail').value.trim(), document.getElementById('loginPassword').value); } 
+    catch(e) { document.getElementById('loginError').textContent = 'Invalid credentials'; document.getElementById('loginError').style.display='block'; }
+  });
+  
+  function doSignOut(){ auth.signOut(); }
+  auth.onAuthStateChanged(user => {
+    if(user){ document.getElementById('loginScreen').style.display='none'; document.getElementById('mainApp').classList.remove('hidden'); loadAllData(); }
+    else{ document.getElementById('loginScreen').style.display='flex'; document.getElementById('mainApp').classList.add('hidden'); }
+  });
+</script>
+</body>
+</html>
