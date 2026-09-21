@@ -41,6 +41,7 @@
     .badge { padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
     .badge-pending { background-color: #fef08a; color: #854d0e; }
     .badge-paid { background-color: #dcfce7; color: #166534; }
+    .badge-pass { background-color: #dcfce7; color: #166534; }
     .badge-fail { background-color: #fee2e2; color: #991b1b; }
     .ledger-block { border: 1px solid #cbd5e1; border-radius: 6px; margin-bottom: 24px; background: #ffffff; }
     .ledger-header { background: #f8fafc; padding: 12px 16px; border-bottom: 1px solid #cbd5e1; font-weight: 600; font-size: 13px; display: flex; align-items: center; }
@@ -96,7 +97,7 @@
       
       <div class="table-container">
         <table>
-          <thead><tr><th>Date</th><th>RM</th><th>Vehicle</th><th>State</th><th>Agent</th><th>Status</th><th>Pay Status</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Date</th><th>RM</th><th>Vehicle</th><th>State</th><th>Agent</th><th>Grade</th><th>TAT</th><th>Status</th><th>Pay Status</th><th>Actions</th></tr></thead>
           <tbody id="records-table-body"></tbody>
         </table>
       </div>
@@ -122,6 +123,19 @@
   </div>
 </div>
 
+<div id="reportModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <h3 style="margin-bottom:14px; font-size:16px;">Add Inspection Report</h3>
+    <div class="form-group" style="margin-bottom:12px;"><label>Score (0-100) [Optional]</label><input type="number" id="modalScore" min="0" max="100"></div>
+    <div class="form-group" style="margin-bottom:12px;"><label>Report Link [Optional]</label><input type="url" id="modalReportUrl" placeholder="Link to Google Drive or PDF"></div>
+    <div class="form-group" style="margin-bottom:14px;"><label>Report Received Date [Optional]</label><input type="date" id="modalReportDate"></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn-submit" style="margin-top:0;" onclick="saveReportDetails()">Save Report</button>
+      <button class="btn-action" onclick="closeReportModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -143,6 +157,7 @@
   let records = [];
   let agentContacts = { "Cars45": {email:""}, "LegitCar Limited": {email:""}, "AGNATE services": {email:""} };
   let chartInstance = null;
+  let currentEditId = null;
 
   function toast(msg){ const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 2200); }
 
@@ -166,6 +181,56 @@
     });
     document.getElementById('tab-'+tabName).classList.remove('hidden');
     document.getElementById('nav-'+tabName).classList.add('active');
+  }
+
+  function openReportModal(id) {
+    currentEditId = String(id);
+    document.getElementById('modalScore').value = '';
+    document.getElementById('modalReportUrl').value = '';
+    document.getElementById('modalReportDate').value = '';
+    document.getElementById('reportModal').classList.remove('hidden');
+  }
+
+  function closeReportModal() {
+    document.getElementById('reportModal').classList.add('hidden');
+    currentEditId = null;
+  }
+
+  async function saveReportDetails() {
+    const scoreVal = document.getElementById('modalScore').value;
+    const urlVal = document.getElementById('modalReportUrl').value;
+    const dateVal = document.getElementById('modalReportDate').value;
+    
+    const record = records.find(r => r.id === currentEditId);
+    if (!record) return closeReportModal();
+
+    let tat = "N/A";
+    if (dateVal) {
+      const diffDays = Math.round(Math.abs(new Date(dateVal) - new Date(record.requestDate)) / 86400000);
+      tat = diffDays === 0 ? "Same Day" : `${diffDays} Days`;
+    }
+
+    let grade = "N/A";
+    let score = null;
+    if (scoreVal !== '') {
+      score = Number(scoreVal);
+      grade = score >= 70 ? "Pass" : "Fail";
+    }
+
+    try {
+      await db.collection('inspections').doc(currentEditId).update({
+        score: score,
+        grade: grade,
+        reportDate: dateVal || null,
+        reportUrl: urlVal || null,
+        turnaroundTime: tat,
+        inspectionStatus: "Completed"
+      });
+      closeReportModal();
+      toast('Report saved successfully');
+    } catch (err) {
+      toast('Failed to save report');
+    }
   }
 
   async function updateStatus(id, field, value) {
@@ -215,11 +280,20 @@
       const inspStatus = r.inspectionStatus || "Pending";
       const payStatus = r.paymentStatus || "Unpaid";
       
-      let inspBtn = inspStatus === "Pending" ? `<button class="btn-action" onclick="updateStatus('${r.id}', 'inspectionStatus', 'Completed')">Mark Done</button>` : `<button class="btn-action" onclick="updateStatus('${r.id}', 'inspectionStatus', 'Pending')">Mark Undone</button>`;
-      let payBtn = payStatus === "Unpaid" ? `<button class="btn-action" onclick="updateStatus('${r.id}', 'paymentStatus', 'Paid')">Mark Paid</button>` : `<button class="btn-action" onclick="updateStatus('${r.id}', 'paymentStatus', 'Unpaid')">Mark Unpaid</button>`;
+      let gradeBadge = r.grade === "Pass" ? `<span class="badge badge-pass">${r.score}% Pass</span>` : r.grade === "Fail" ? `<span class="badge badge-fail">${r.score}% Fail</span>` : (r.grade || "N/A");
+      let tat = r.turnaroundTime || "N/A";
+      let reportLink = r.reportUrl ? `<a href="${r.reportUrl}" target="_blank" class="btn-action" style="text-decoration:none;">View</a>` : "";
+
+      let inspBtn = inspStatus === "Pending" 
+        ? `<button class="btn-action" onclick="openReportModal('${r.id}')">Add Details</button>` 
+        : `${reportLink}<button class="btn-action" onclick="openReportModal('${r.id}')">Edit</button> <button class="btn-action" onclick="updateStatus('${r.id}', 'inspectionStatus', 'Pending')">Undo</button>`;
+        
+      let payBtn = payStatus === "Unpaid" 
+        ? `<button class="btn-action" onclick="updateStatus('${r.id}', 'paymentStatus', 'Paid')">Mark Paid</button>` 
+        : `<button class="btn-action" onclick="updateStatus('${r.id}', 'paymentStatus', 'Unpaid')">Mark Unpaid</button>`;
 
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${r.requestDate}</td><td>${r.requestorName}</td><td>${r.vehicleBrand} ${r.vehicleModel}</td><td>${r.state}</td><td>${r.agent}</td><td><span class="badge ${inspStatus==='Completed'?'badge-paid':'badge-pending'}">${inspStatus}</span></td><td><span class="badge ${payStatus==='Paid'?'badge-paid':'badge-fail'}">${payStatus}</span></td><td>${inspBtn}${payBtn}</td>`;
+      tr.innerHTML = `<td>${r.requestDate}</td><td>${r.requestorName}</td><td>${r.vehicleBrand} ${r.vehicleModel}</td><td>${r.state}</td><td>${r.agent}</td><td>${gradeBadge}</td><td>${tat}</td><td><span class="badge ${inspStatus==='Completed'?'badge-paid':'badge-pending'}">${inspStatus}</span></td><td><span class="badge ${payStatus==='Paid'?'badge-paid':'badge-fail'}">${payStatus}</span></td><td>${inspBtn}${payBtn}</td>`;
       tbody.appendChild(tr);
     });
   }
