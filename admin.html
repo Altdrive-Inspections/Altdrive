@@ -7,6 +7,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-storage-compat.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
@@ -50,8 +51,8 @@
     .toast.show { opacity: 1; }
     #loginScreen { min-height:100vh; display:none; align-items:center; justify-content:center; }
     #loginBox { background:#fff; border:1px solid var(--border); border-radius:10px; padding:26px; max-width:340px; width:100%; }
-    .modal-overlay { position: fixed; inset:0; background: rgba(15,23,42,0.5); display:flex; align-items:center; justify-content:center; z-index:200; padding:16px; }
-    .modal-box { background:#fff; border-radius:10px; padding:22px; width:100%; max-width:360px; }
+    .modal-overlay { position: fixed; inset:0; background: rgba(15,23,42,0.5); display:flex; align-items:center; justify-content:center; z-index:200; padding:16px; overflow-y:auto; }
+    .modal-box { background:#fff; border-radius:10px; padding:22px; width:100%; max-width:400px; margin:auto; }
     @media print { body * { visibility: hidden; } #print-area, #print-area * { visibility: visible; } #print-area { position: absolute; left: 0; top: 0; width: 100%; } header, nav, .btn-print, .btn-action, .card > div:first-child, .ledger-header input { display: none !important; } @page { size: A4 landscape; margin: 15mm; } }
   </style>
 </head>
@@ -73,7 +74,7 @@
     <nav>
       <button id="nav-dashboard" class="active" onclick="switchTab('dashboard')">Analytics & Records</button>
       <button id="nav-unpaid" onclick="switchTab('unpaid')">Unpaid Ledger</button>
-      <button id="nav-settings" onclick="switchTab('settings')">Agent Contacts</button>
+      <button id="nav-agents" onclick="switchTab('agents')">Agent Settings</button>
     </nav>
     <button id="signOutBtn" onclick="doSignOut()">Sign out</button>
   </header>
@@ -81,23 +82,18 @@
   <div class="container">
     <div id="tab-dashboard" class="card">
       <div class="chart-container"><canvas id="agentChart"></canvas></div>
-      <div class="analytics-grid">
-        <div class="stat-card"><div class="stat-value" id="stat-total">0</div><div class="stat-label">Total Logs</div></div>
-        <div class="stat-card"><div class="stat-value" id="stat-cars45">0</div><div class="stat-label">Cars45</div></div>
-        <div class="stat-card"><div class="stat-value" id="stat-legit">0</div><div class="stat-label">LegitCar</div></div>
-        <div class="stat-card"><div class="stat-value" id="stat-agnate">0</div><div class="stat-label">AGNATE</div></div>
-      </div>
+      <div class="analytics-grid" id="analytics-boxes"></div>
 
       <div class="filter-bar">
         <input type="text" id="searchFilter" placeholder="Search chassis, brand..." oninput="renderDashboard()" style="width:200px;">
         <select id="agentFilter" onchange="renderDashboard()" style="width:150px;">
-          <option value="">All Agents</option><option value="Cars45">Cars45</option><option value="LegitCar Limited">LegitCar</option><option value="AGNATE services">AGNATE</option>
+          <option value="">All Agents</option>
         </select>
       </div>
       
       <div class="table-container">
         <table>
-          <thead><tr><th>Date</th><th>RM</th><th>Vehicle</th><th>State</th><th>Agent</th><th>Grade</th><th>TAT</th><th>Status</th><th>Pay Status</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Date</th><th>RM</th><th>Vehicle</th><th>State</th><th>Agent</th><th>Grade</th><th>TAT</th><th>Status</th><th>Docs</th><th>Actions</th></tr></thead>
           <tbody id="records-table-body"></tbody>
         </table>
       </div>
@@ -115,23 +111,63 @@
       <div id="print-area"><div id="ledger-entries"></div></div>
     </div>
 
-    <div id="tab-settings" class="card hidden">
-      <h2>Agent Automation Contacts</h2>
-      <div id="agentContactsForm"></div>
-      <button class="btn-submit" onclick="saveAgentContactsForm()" style="margin-top:12px;">Save Contacts</button>
+    <div id="tab-agents" class="card hidden">
+      <div style="display: flex; justify-content: space-between; margin-bottom: 16px;">
+        <h2>Inspection Agents Routing</h2>
+        <button class="btn-submit" style="width:auto; margin:0;" onclick="openAgentModal()">Add New Agent</button>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead><tr><th>Agent Name</th><th>Routing Email</th><th>Covered States</th><th>Fee (NGN)</th><th>Bank</th><th>Actions</th></tr></thead>
+          <tbody id="agent-table-body"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 </div>
 
 <div id="reportModal" class="modal-overlay hidden">
   <div class="modal-box">
-    <h3 style="margin-bottom:14px; font-size:16px;">Add Inspection Report</h3>
+    <h3 style="margin-bottom:14px; font-size:16px;">Add Inspection Details</h3>
     <div class="form-group" style="margin-bottom:12px;"><label>Score (0-100) [Optional]</label><input type="number" id="modalScore" min="0" max="100"></div>
-    <div class="form-group" style="margin-bottom:12px;"><label>Report Link [Optional]</label><input type="url" id="modalReportUrl" placeholder="Link to Google Drive or PDF"></div>
+    <div class="form-group" style="margin-bottom:12px;"><label>Upload Report Files [Multiple allowed]</label><input type="file" id="modalReportFiles" multiple accept=".pdf,image/*"></div>
     <div class="form-group" style="margin-bottom:14px;"><label>Report Received Date [Optional]</label><input type="date" id="modalReportDate"></div>
     <div style="display:flex;gap:8px;">
-      <button class="btn-submit" style="margin-top:0;" onclick="saveReportDetails()">Save Report</button>
+      <button class="btn-submit" id="saveReportBtn" style="margin-top:0;" onclick="saveReportDetails()">Save & Upload</button>
       <button class="btn-action" onclick="closeReportModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="agentModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <h3 style="margin-bottom:14px; font-size:16px;" id="agentModalTitle">Add Agent</h3>
+    <input type="hidden" id="agentId">
+    <div class="form-group"><label>Agent Name</label><input type="text" id="agentName" required></div>
+    <div class="form-group"><label>Routing Email</label><input type="email" id="agentEmail" required></div>
+    <div class="form-group"><label>Covered States (Comma separated, or type 'All')</label><input type="text" id="agentStates" placeholder="e.g. Lagos, FCT (Abuja), Kano" required></div>
+    <div class="grid-2">
+      <div class="form-group"><label>Inspection Fee</label><input type="number" id="agentFee" required></div>
+      <div class="form-group"><label>Bank Name</label><input type="text" id="agentBank" required></div>
+    </div>
+    <div class="grid-2">
+      <div class="form-group"><label>Account Number</label><input type="text" id="agentAccount" required></div>
+      <div class="form-group"><label>Ledger Name</label><input type="text" id="agentLedger" required></div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn-submit" style="margin-top:0;" onclick="saveAgentDetails()">Save Agent</button>
+      <button class="btn-action" onclick="closeAgentModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="deleteConfirmModal" class="modal-overlay hidden">
+  <div class="modal-box" style="max-width:320px; text-align:center;">
+    <h3 style="color:#b91c1c; margin-bottom:12px; font-size:16px;">Confirm Removal</h3>
+    <p style="font-size:13.5px; color:#475569; margin-bottom:20px;">Are you sure you want to remove this file link from the database?</p>
+    <div style="display:flex;gap:8px;justify-content:center;">
+      <button class="btn-submit" id="confirmDeleteBtn" style="background-color:#b91c1c; margin-top:0;" onclick="executeDeleteFile()">Remove Link</button>
+      <button class="btn-action" onclick="closeDeleteModal()">Cancel</button>
     </div>
   </div>
 </div>
@@ -139,6 +175,9 @@
 <div class="toast" id="toast"></div>
 
 <script>
+  const cloudinaryCloudName = "m6hnnk5n";
+  const cloudinaryUploadPreset = "rf6hgwis";
+
   const firebaseConfig = {
     apiKey: "AIzaSyC6MYZewYVN6sreX7RlLjUrUBKQL72nzzo",
     authDomain: "altdrive-inspections.firebaseapp.com",
@@ -148,23 +187,29 @@
   const auth = firebase.auth();
   const db = firebase.firestore();
 
-  const agentProfiles = {
-    "Cars45": { fee: 20000, bank: "WEMA BANK", account: "7256734484", ledgerName: "CARS45" },
-    "LegitCar Limited": { fee: 30000, bank: "ALTBANK", account: "0510166013", ledgerName: "LEGITRON LTD" },
-    "AGNATE services": { fee: 35000, bank: "STERLING BANK", account: "0501272400", ledgerName: "AGNATE LIMITED" }
-  };
-
   let records = [];
-  let agentContacts = { "Cars45": {email:""}, "LegitCar Limited": {email:""}, "AGNATE services": {email:""} };
+  let agents = [];
   let chartInstance = null;
   let currentEditId = null;
+  let fileToDelete = null;
 
   function toast(msg){ const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 2200); }
 
   async function loadAllData() {
-    const doc = await db.collection('settings').doc('agent_contacts').get();
-    if (doc.exists) agentContacts = doc.data();
-    renderAgentContactsForm();
+    db.collection('settings').doc('agent_contacts').onSnapshot(doc => {
+      if (doc.exists && doc.data().agents) {
+        agents = doc.data().agents;
+      } else {
+        agents = [
+          { id: "1", name: "Cars45", email: "cars45@example.com", states: "All", fee: 20000, bank: "WEMA BANK", account: "7256734484", ledgerName: "CARS45" },
+          { id: "2", name: "LegitCar Limited", email: "legit@example.com", states: "FCT (Abuja), Lagos", fee: 30000, bank: "ALTBANK", account: "0510166013", ledgerName: "LEGITRON LTD" },
+          { id: "3", name: "AGNATE services", email: "agnate@example.com", states: "All", fee: 35000, bank: "STERLING BANK", account: "0501272400", ledgerName: "AGNATE LIMITED" }
+        ];
+        db.collection('settings').doc('agent_contacts').set({ agents });
+      }
+      renderAgentTable();
+      populateAgentFilters();
+    });
 
     db.collection('inspections').orderBy('requestDate', 'desc').onSnapshot(snapshot => {
       records = [];
@@ -175,7 +220,7 @@
   }
 
   function switchTab(tabName) {
-    ['dashboard','unpaid','settings'].forEach(t=>{
+    ['dashboard','unpaid','agents'].forEach(t=>{
       document.getElementById('tab-'+t).classList.add('hidden');
       document.getElementById('nav-'+t).classList.remove('active');
     });
@@ -183,59 +228,187 @@
     document.getElementById('nav-'+tabName).classList.add('active');
   }
 
+  function populateAgentFilters() {
+    const filter = document.getElementById("agentFilter");
+    filter.innerHTML = '<option value="">All Agents</option>';
+    agents.forEach(a => { filter.innerHTML += `<option value="${a.name}">${a.name}</option>`; });
+  }
+
+  function renderAgentTable() {
+    const tbody = document.getElementById("agent-table-body");
+    tbody.innerHTML = "";
+    agents.forEach(a => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${a.name}</td><td>${a.email}</td><td>${a.states}</td><td>${Number(a.fee).toLocaleString()}</td><td>${a.bank}</td>
+      <td><button class="btn-action" onclick="editAgent('${a.id}')">Edit</button> <button class="btn-action" onclick="deleteAgent('${a.id}')" style="color:#b91c1c;">Delete</button></td>`;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function openAgentModal(id = null) {
+    if (id) {
+      const a = agents.find(ag => ag.id === id);
+      document.getElementById('agentId').value = a.id;
+      document.getElementById('agentName').value = a.name;
+      document.getElementById('agentEmail').value = a.email;
+      document.getElementById('agentStates').value = a.states;
+      document.getElementById('agentFee').value = a.fee;
+      document.getElementById('agentBank').value = a.bank;
+      document.getElementById('agentAccount').value = a.account;
+      document.getElementById('agentLedger').value = a.ledgerName;
+      document.getElementById('agentModalTitle').innerText = "Edit Agent";
+    } else {
+      document.getElementById('agentId').value = "";
+      document.querySelectorAll('#agentModal input[type="text"], #agentModal input[type="email"], #agentModal input[type="number"]').forEach(i => i.value = "");
+      document.getElementById('agentModalTitle').innerText = "Add New Agent";
+    }
+    document.getElementById('agentModal').classList.remove('hidden');
+  }
+
+  function closeAgentModal() { document.getElementById('agentModal').classList.add('hidden'); }
+
+  async function saveAgentDetails() {
+    const id = document.getElementById('agentId').value || Date.now().toString();
+    const updatedAgent = {
+      id: id,
+      name: document.getElementById('agentName').value.trim(),
+      email: document.getElementById('agentEmail').value.trim(),
+      states: document.getElementById('agentStates').value.trim(),
+      fee: Number(document.getElementById('agentFee').value),
+      bank: document.getElementById('agentBank').value.trim(),
+      account: document.getElementById('agentAccount').value.trim(),
+      ledgerName: document.getElementById('agentLedger').value.trim()
+    };
+    
+    if(!updatedAgent.name || !updatedAgent.email) return toast("Name and email are required");
+
+    let newAgents = agents.filter(a => a.id !== id);
+    newAgents.push(updatedAgent);
+    
+    await db.collection('settings').doc('agent_contacts').set({ agents: newAgents });
+    closeAgentModal();
+    toast('Agent saved');
+  }
+
+  async function deleteAgent(id) {
+    if(confirm("Are you sure you want to delete this agent?")) {
+      const newAgents = agents.filter(a => a.id !== id);
+      await db.collection('settings').doc('agent_contacts').set({ agents: newAgents });
+      toast('Agent removed');
+    }
+  }
+
+  function editAgent(id) { openAgentModal(id); }
+
   function openReportModal(id) {
     currentEditId = String(id);
     document.getElementById('modalScore').value = '';
-    document.getElementById('modalReportUrl').value = '';
+    document.getElementById('modalReportFiles').value = '';
     document.getElementById('modalReportDate').value = '';
     document.getElementById('reportModal').classList.remove('hidden');
   }
 
-  function closeReportModal() {
-    document.getElementById('reportModal').classList.add('hidden');
-    currentEditId = null;
-  }
+  function closeReportModal() { document.getElementById('reportModal').classList.add('hidden'); currentEditId = null; }
 
   async function saveReportDetails() {
     const scoreVal = document.getElementById('modalScore').value;
-    const urlVal = document.getElementById('modalReportUrl').value;
     const dateVal = document.getElementById('modalReportDate').value;
+    const fileInput = document.getElementById('modalReportFiles');
+    const saveBtn = document.getElementById('saveReportBtn');
     
     const record = records.find(r => r.id === currentEditId);
     if (!record) return closeReportModal();
 
-    let tat = "N/A";
-    if (dateVal) {
-      const diffDays = Math.round(Math.abs(new Date(dateVal) - new Date(record.requestDate)) / 86400000);
-      tat = diffDays === 0 ? "Same Day" : `${diffDays} Days`;
-    }
-
-    let grade = "N/A";
-    let score = null;
-    if (scoreVal !== '') {
-      score = Number(scoreVal);
-      grade = score >= 70 ? "Pass" : "Fail";
-    }
+    saveBtn.textContent = "Uploading...";
+    saveBtn.disabled = true;
 
     try {
+      let uploadedUrls = record.reportUrls || [];
+      if (fileInput.files.length > 0) {
+        for(let i = 0; i < fileInput.files.length; i++) {
+          const file = fileInput.files[i];
+          const formData = new FormData();
+          formData.append("file", file);
+          formData.append("upload_preset", cloudinaryUploadPreset);
+
+          const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudinaryCloudName}/auto/upload`, {
+            method: "POST",
+            body: formData
+          });
+          const uploadData = await uploadRes.json();
+          if(uploadData.secure_url) uploadedUrls.push(uploadData.secure_url);
+        }
+      }
+
+      let tat = record.turnaroundTime || "N/A";
+      if (dateVal) {
+        const diffDays = Math.round(Math.abs(new Date(dateVal) - new Date(record.requestDate)) / 86400000);
+        tat = diffDays === 0 ? "Same Day" : `${diffDays} Days`;
+      }
+
+      let grade = record.grade || "N/A";
+      let score = record.score || null;
+      if (scoreVal !== '') {
+        score = Number(scoreVal);
+        grade = score >= 70 ? "Pass" : "Fail";
+      }
+
       await db.collection('inspections').doc(currentEditId).update({
         score: score,
         grade: grade,
-        reportDate: dateVal || null,
-        reportUrl: urlVal || null,
+        reportDate: dateVal || record.reportDate || null,
+        reportUrls: uploadedUrls,
         turnaroundTime: tat,
         inspectionStatus: "Completed"
       });
       closeReportModal();
-      toast('Report saved successfully');
+      toast('Details updated successfully');
     } catch (err) {
-      toast('Failed to save report');
+      toast('Failed to save details');
+    } finally {
+      saveBtn.textContent = "Save & Upload";
+      saveBtn.disabled = false;
     }
   }
 
   async function updateStatus(id, field, value) {
     await db.collection('inspections').doc(id).update({ [field]: value });
     toast('Record updated');
+  }
+  
+  function confirmDeleteFile(id, type, index = null) {
+    fileToDelete = { id, type, index };
+    document.getElementById('deleteConfirmModal').classList.remove('hidden');
+  }
+
+  function closeDeleteModal() {
+    document.getElementById('deleteConfirmModal').classList.add('hidden');
+    fileToDelete = null;
+  }
+
+  async function executeDeleteFile() {
+    if (!fileToDelete) return;
+    const { id, type, index } = fileToDelete;
+    const btn = document.getElementById('confirmDeleteBtn');
+    btn.textContent = "Removing...";
+    btn.disabled = true;
+
+    try {
+      const record = records.find(r => r.id === id);
+      if (type === 'receipt') {
+        await db.collection('inspections').doc(id).update({ receiptUrl: firebase.firestore.FieldValue.delete() });
+      } else if (type === 'report') {
+        let newUrls = record.reportUrls.filter((u, i) => i !== index);
+        await db.collection('inspections').doc(id).update({ reportUrls: newUrls });
+      }
+      toast("File removed from records");
+    } catch (err) {
+      toast("Error removing file");
+    } finally {
+      btn.textContent = "Remove Link";
+      btn.disabled = false;
+      closeDeleteModal();
+    }
   }
 
   async function processBatchPayments() {
@@ -257,20 +430,25 @@
       return matchesSearch && matchesAgent;
     });
 
-    const c45Count = filteredRecords.filter(r => r.agent === "Cars45").length;
-    const legitCount = filteredRecords.filter(r => r.agent === "LegitCar Limited").length;
-    const agnateCount = filteredRecords.filter(r => r.agent === "AGNATE services").length;
-
-    document.getElementById("stat-total").innerText = filteredRecords.length;
-    document.getElementById("stat-cars45").innerText = c45Count;
-    document.getElementById("stat-legit").innerText = legitCount;
-    document.getElementById("stat-agnate").innerText = agnateCount;
+    const statBoxes = document.getElementById('analytics-boxes');
+    statBoxes.innerHTML = `<div class="stat-card"><div class="stat-value">${filteredRecords.length}</div><div class="stat-label">Total Logs</div></div>`;
+    let chartLabels = [];
+    let chartData = [];
+    
+    agents.forEach(a => {
+      const count = filteredRecords.filter(r => r.agent === a.name).length;
+      if (count > 0 || agentFilter === "") {
+        statBoxes.innerHTML += `<div class="stat-card"><div class="stat-value">${count}</div><div class="stat-label">${a.name.split(' ')[0]}</div></div>`;
+        chartLabels.push(a.name);
+        chartData.push(count);
+      }
+    });
 
     if(chartInstance) chartInstance.destroy();
     const ctx = document.getElementById('agentChart').getContext('2d');
     chartInstance = new Chart(ctx, {
       type: 'doughnut',
-      data: { labels: ['Cars45', 'LegitCar', 'AGNATE'], datasets: [{ data: [c45Count, legitCount, agnateCount], backgroundColor: ['#3b82f6', '#10b981', '#f59e0b'] }] },
+      data: { labels: chartLabels, datasets: [{ data: chartData, backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'] }] },
       options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
     });
 
@@ -279,21 +457,28 @@
     filteredRecords.forEach(r => {
       const inspStatus = r.inspectionStatus || "Pending";
       const payStatus = r.paymentStatus || "Unpaid";
-      
       let gradeBadge = r.grade === "Pass" ? `<span class="badge badge-pass">${r.score}% Pass</span>` : r.grade === "Fail" ? `<span class="badge badge-fail">${r.score}% Fail</span>` : (r.grade || "N/A");
-      let tat = r.turnaroundTime || "N/A";
-      let reportLink = r.reportUrl ? `<a href="${r.reportUrl}" target="_blank" class="btn-action" style="text-decoration:none;">View</a>` : "";
+      
+      let docsHtml = "";
+      if (r.receiptUrl) {
+        docsHtml += `<div style="display:inline-flex; align-items:center; margin-right:4px; margin-bottom:4px;"><a href="${r.receiptUrl}" target="_blank" class="btn-action" style="background:#dcfce7; margin-right:0; border-top-right-radius:0; border-bottom-right-radius:0;">Receipt</a><button onclick="confirmDeleteFile('${r.id}', 'receipt')" class="btn-action" style="background:#fee2e2; color:#991b1b; border-left:none; margin-left:0; border-top-left-radius:0; border-bottom-left-radius:0; padding:6px 6px;">✕</button></div>`;
+      }
+      if (r.reportUrls && r.reportUrls.length > 0) {
+        r.reportUrls.forEach((url, i) => { 
+          docsHtml += `<div style="display:inline-flex; align-items:center; margin-right:4px; margin-bottom:4px;"><a href="${url}" target="_blank" class="btn-action" style="margin-right:0; border-top-right-radius:0; border-bottom-right-radius:0;">Rep ${i+1}</a><button onclick="confirmDeleteFile('${r.id}', 'report', ${i})" class="btn-action" style="background:#fee2e2; color:#991b1b; border-left:none; margin-left:0; border-top-left-radius:0; border-bottom-left-radius:0; padding:6px 6px;">✕</button></div>`;
+        });
+      }
 
       let inspBtn = inspStatus === "Pending" 
-        ? `<button class="btn-action" onclick="openReportModal('${r.id}')">Add Details</button>` 
-        : `${reportLink}<button class="btn-action" onclick="openReportModal('${r.id}')">Edit</button> <button class="btn-action" onclick="updateStatus('${r.id}', 'inspectionStatus', 'Pending')">Undo</button>`;
+        ? `<button class="btn-action" onclick="openReportModal('${r.id}')">Add details</button>` 
+        : `<button class="btn-action" onclick="openReportModal('${r.id}')">Edit</button> <button class="btn-action" onclick="updateStatus('${r.id}', 'inspectionStatus', 'Pending')">Undo</button>`;
         
       let payBtn = payStatus === "Unpaid" 
         ? `<button class="btn-action" onclick="updateStatus('${r.id}', 'paymentStatus', 'Paid')">Mark Paid</button>` 
         : `<button class="btn-action" onclick="updateStatus('${r.id}', 'paymentStatus', 'Unpaid')">Mark Unpaid</button>`;
 
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${r.requestDate}</td><td>${r.requestorName}</td><td>${r.vehicleBrand} ${r.vehicleModel}</td><td>${r.state}</td><td>${r.agent}</td><td>${gradeBadge}</td><td>${tat}</td><td><span class="badge ${inspStatus==='Completed'?'badge-paid':'badge-pending'}">${inspStatus}</span></td><td><span class="badge ${payStatus==='Paid'?'badge-paid':'badge-fail'}">${payStatus}</span></td><td>${inspBtn}${payBtn}</td>`;
+      tr.innerHTML = `<td>${r.requestDate}</td><td>${r.requestorName}</td><td>${r.vehicleBrand} ${r.vehicleModel}</td><td>${r.state}</td><td>${r.agent}</td><td>${gradeBadge}</td><td>${r.turnaroundTime || "N/A"}</td><td><span class="badge ${inspStatus==='Completed'?'badge-paid':'badge-pending'}">${inspStatus}</span></td><td>${docsHtml}</td><td>${inspBtn}${payBtn}</td>`;
       tbody.appendChild(tr);
     });
   }
@@ -303,19 +488,20 @@
     const container = document.getElementById("ledger-entries");
     container.innerHTML = "";
     unpaid.forEach(r => {
-      const p = agentProfiles[r.agent];
+      const p = agents.find(a => a.name === r.agent);
+      if (!p) return;
       const grossRemainder = 40000 - p.fee;
       const desc = `BNG PAYMENT FOR ${r.vehicleYear} ${r.vehicleBrand.toUpperCase()} ${r.vehicleModel.toUpperCase()}`;
       
       const block = document.createElement("div");
       block.className = "ledger-block";
       block.innerHTML = `
-        <div class="ledger-header"><input type="checkbox" class="batch-pay-checkbox" value="${r.id}" style="margin-right:12px;">${r.vehicleBrand} ${r.vehicleModel} (${r.chassis}) | ${r.agent}</div>
+        <div class="ledger-header"><input type="checkbox" class="batch-pay-checkbox" value="${r.id}" style="margin-right:12px;">${r.vehicleBrand} ${r.vehicleModel} (${r.chassis}) | ${p.name}</div>
         <table>
           <thead><tr><th>ENTRY</th><th>ACCOUNT</th><th>ACCOUNT NAME</th><th>BANK</th><th>AMOUNT (NGN)</th><th>DESCRIPTION</th></tr></thead>
           <tbody>
             <tr><td>Dr</td><td>0505420261</td><td>ALTDRIVE COLLECTION</td><td>ALTBANK</td><td>40,000.00</td><td>${desc}</td></tr>
-            <tr><td>Cr</td><td>${p.account}</td><td>${p.ledgerName}</td><td>${p.bank}</td><td>${p.fee.toLocaleString(undefined,{minimumFractionDigits:2})}</td><td>${desc}</td></tr>
+            <tr><td>Cr</td><td>${p.account}</td><td>${p.ledgerName}</td><td>${p.bank}</td><td>${Number(p.fee).toLocaleString(undefined,{minimumFractionDigits:2})}</td><td>${desc}</td></tr>
             <tr><td>Cr</td><td>1/566/430326/0/10</td><td>ALTDRIVE COMMISSION</td><td>-</td><td>${(grossRemainder - Math.round(grossRemainder * 0.02)).toLocaleString(undefined,{minimumFractionDigits:2})}</td><td>BNG COMMISSION</td></tr>
             <tr><td>Cr</td><td>0511958303</td><td>AMH/SINKING FUND</td><td>-</td><td>${Math.round(grossRemainder * 0.02).toLocaleString(undefined,{minimumFractionDigits:2})}</td><td>BNG SINKING FUND</td></tr>
           </tbody>
@@ -328,7 +514,8 @@
     const unpaid = records.filter(r => r.paymentStatus !== "Paid");
     const rows = [];
     unpaid.forEach(r => {
-      const p = agentProfiles[r.agent];
+      const p = agents.find(a => a.name === r.agent);
+      if (!p) return;
       const grossRemainder = 40000 - p.fee;
       const desc = `BNG PAYMENT FOR ${r.vehicleYear} ${r.vehicleBrand.toUpperCase()} ${r.vehicleModel.toUpperCase()}`;
       rows.push({ Entry:"Dr", Account:"0505420261", "Account Name":"ALTDRIVE COLLECTION", Bank:"ALTBANK", "Amount (NGN)":40000, Description:desc });
@@ -336,22 +523,11 @@
       rows.push({ Entry:"Cr", Account:"1/566/430326/0/10", "Account Name":"ALTDRIVE COMMISSION", Bank:"-", "Amount (NGN)":(grossRemainder - Math.round(grossRemainder * 0.02)), Description:"BNG COMMISSION" });
       rows.push({ Entry:"Cr", Account:"0511958303", "Account Name":"AMH/SINKING FUND", Bank:"-", "Amount (NGN)":Math.round(grossRemainder * 0.02), Description:"BNG SINKING FUND" });
     });
+    if(rows.length === 0) return toast("No unpaid ledger entries");
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Ledger');
     XLSX.writeFile(wb, `altdrive-ledger-${new Date().toISOString().split('T')[0]}.xlsx`);
-  }
-
-  function renderAgentContactsForm(){
-    document.getElementById('agentContactsForm').innerHTML = Object.keys(agentProfiles).map(a => `
-      <div class="grid-2"><div class="form-group"><label>${a} Routing Email</label><input type="email" class="contact-email" data-agent="${a}" value="${(agentContacts[a]&&agentContacts[a].email)||''}"></div></div>
-    `).join('');
-  }
-
-  async function saveAgentContactsForm(){
-    document.querySelectorAll('.contact-email').forEach(inp => { agentContacts[inp.dataset.agent] = { email: inp.value.trim() }; });
-    await db.collection('settings').doc('agent_contacts').set(agentContacts);
-    toast('Routing emails saved');
   }
 
   document.getElementById('loginBtn').addEventListener('click', async ()=>{
