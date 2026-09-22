@@ -39,19 +39,14 @@
     <form id="inspection-form" onsubmit="triggerPaymentModal(event)">
       <div class="grid-2">
         <div class="form-group"><label>Request Date</label><input type="date" id="requestDate" required readonly></div>
-        <div class="form-group"><label>Requestor Name (Internal Staff)</label><input type="text" id="requestorName" required></div>
+        <div class="form-group"><label>Requestor Name (RM)</label><input type="text" id="requestorName" required></div>
       </div>
 
       <div class="grid-2">
         <div class="form-group"><label>State Location</label>
           <select id="inspectionState" onchange="filterAgents()" required>
             <option value="">Select State</option>
-            <option value="FCT (Abuja)">FCT (Abuja)</option>
-            <option value="Lagos">Lagos</option>
-            <option value="Abia">Abia</option>
-            <option value="Kano">Kano</option>
-            <option value="Rivers">Rivers</option>
-            <option value="Other">Other</option>
+            <option value="Abia">Abia</option><option value="Adamawa">Adamawa</option><option value="Akwa Ibom">Akwa Ibom</option><option value="Anambra">Anambra</option><option value="Bauchi">Bauchi</option><option value="Bayelsa">Bayelsa</option><option value="Benue">Benue</option><option value="Borno">Borno</option><option value="Cross River">Cross River</option><option value="Delta">Delta</option><option value="Ebonyi">Ebonyi</option><option value="Edo">Edo</option><option value="Ekiti">Ekiti</option><option value="Enugu">Enugu</option><option value="FCT (Abuja)">FCT (Abuja)</option><option value="Gombe">Gombe</option><option value="Imo">Imo</option><option value="Jigawa">Jigawa</option><option value="Kaduna">Kaduna</option><option value="Kano">Kano</option><option value="Katsina">Katsina</option><option value="Kebbi">Kebbi</option><option value="Kogi">Kogi</option><option value="Kwara">Kwara</option><option value="Lagos">Lagos</option><option value="Nasarawa">Nasarawa</option><option value="Niger">Niger</option><option value="Ogun">Ogun</option><option value="Ondo">Ondo</option><option value="Osun">Osun</option><option value="Oyo">Oyo</option><option value="Plateau">Plateau</option><option value="Rivers">Rivers</option><option value="Sokoto">Sokoto</option><option value="Taraba">Taraba</option><option value="Yobe">Yobe</option><option value="Zamfara">Zamfara</option>
           </select>
         </div>
         <div class="form-group">
@@ -71,10 +66,10 @@
         <div class="form-group"><label>Vehicle Year</label><input type="number" id="vehicleYear" required></div>
         <div class="form-group"><label>Vehicle Status</label>
           <select id="vehicleStatus" required>
-  <option value="Brand New">Brand New</option>
-  <option value="Foreign Used">Foreign Used</option>
-  <option value="Nigerian Used">Nigerian Used</option>
-</select>
+            <option value="Brand New">Brand New</option>
+            <option value="Foreign Used">Foreign Used</option>
+            <option value="Nigerian Used">Nigerian Used</option>
+          </select>
         </div>
       </div>
 
@@ -95,9 +90,15 @@
   <div class="modal-box">
     <h3>Payment Required</h3>
     <p>To process this inspection, kindly credit the AltDrive Collections account with the inspection fee.</p>
-    <div style="background:#f1f5f9; padding:12px; border-radius:6px; margin-bottom:20px; font-weight:700; font-size:16px;">
-      Account: 0505420261(Sterling Alternative Finance)<br><span style="font-size:13px; color:#475569; font-weight:500;">AltBank</span>
+    <div style="background:#f1f5f9; padding:12px; border-radius:6px; margin-bottom:14px; font-weight:700; font-size:16px;">
+      Account: 0505420261<br><span style="font-size:13px; color:#475569; font-weight:500;">AltBank</span>
     </div>
+    
+    <div style="text-align:left; margin-bottom:20px;">
+      <label style="font-size:13px; font-weight:600; margin-bottom:6px; display:block;">Upload Proof of Payment</label>
+      <input type="file" id="receiptFile" accept=".pdf,image/*" onchange="toggleContinueBtn()">
+    </div>
+
     <div style="display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:20px;">
       <input type="checkbox" id="paymentConfirmCheck" onchange="toggleContinueBtn()" style="width:auto; transform:scale(1.2);">
       <label for="paymentConfirmCheck" style="font-size:14px; font-weight:600; margin:0; cursor:pointer;">I have made payment</label>
@@ -117,6 +118,9 @@
 </div>
 
 <script>
+  const cloudinaryCloudName = "m6hnnk5n";
+  const cloudinaryUploadPreset = "rf6hgwis";
+
   const firebaseConfig = {
     apiKey: "AIzaSyC6MYZewYVN6sreX7RlLjUrUBKQL72nzzo",
     authDomain: "altdrive-inspections.firebaseapp.com",
@@ -132,12 +136,14 @@
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
 
-  let routingEmails = {};
+  let adminAgents = [];
   
   document.getElementById("requestDate").value = new Date().toISOString().split('T')[0];
 
   db.collection('settings').doc('agent_contacts').get().then(doc => {
-    if (doc.exists) routingEmails = doc.data();
+    if (doc.exists && doc.data().agents) {
+      adminAgents = doc.data().agents;
+    }
   });
 
   function filterAgents() {
@@ -145,61 +151,84 @@
     const agentSelect = document.getElementById("agentSelect");
     agentSelect.innerHTML = '<option value="">Select Partner</option>';
     
-    if (state === "FCT (Abuja)" || state === "Lagos") {
-      agentSelect.innerHTML += '<option value="LegitCar Limited">LegitCar Limited</option>';
-      agentSelect.innerHTML += '<option value="AGNATE services">AGNATE services</option>';
-      agentSelect.disabled = false;
-    } else if (state) {
-      agentSelect.innerHTML += '<option value="AGNATE services">AGNATE services</option>';
-      agentSelect.innerHTML += '<option value="Cars45">Cars45</option>';
-      agentSelect.disabled = false;
-    } else {
+    if (!state) {
       agentSelect.disabled = true;
+      return;
     }
+    
+    adminAgents.forEach(a => {
+      const covered = a.states.toLowerCase();
+      if (covered === "" || covered.includes("all") || covered.includes(state.toLowerCase())) {
+        agentSelect.innerHTML += `<option value="${a.name}">${a.name}</option>`;
+      }
+    });
+    
+    agentSelect.disabled = agentSelect.options.length <= 1;
   }
 
   function triggerPaymentModal(e) {
     e.preventDefault();
+    document.getElementById('receiptFile').value = '';
     document.getElementById('paymentConfirmCheck').checked = false;
     document.getElementById('continueBtn').disabled = true;
     document.getElementById('paymentModal').classList.remove('hidden');
   }
 
   function toggleContinueBtn() {
-    document.getElementById('continueBtn').disabled = !document.getElementById('paymentConfirmCheck').checked;
+    const hasFile = document.getElementById('receiptFile').files.length > 0;
+    const isChecked = document.getElementById('paymentConfirmCheck').checked;
+    document.getElementById('continueBtn').disabled = !(hasFile && isChecked);
   }
 
   async function processSubmission() {
     const btn = document.getElementById('continueBtn');
-    btn.textContent = "Processing...";
+    btn.textContent = "Uploading & Saving...";
     btn.disabled = true;
 
-    const selectedAgent = document.getElementById("agentSelect").value;
-    const targetEmail = routingEmails[selectedAgent] ? routingEmails[selectedAgent].email : "";
-
-    const newRecord = {
-      requestDate: document.getElementById("requestDate").value,
-      requestorName: document.getElementById("requestorName").value,
-      state: document.getElementById("inspectionState").value,
-      agent: selectedAgent,
-      vehicleBrand: document.getElementById("vehicleBrand").value,
-      vehicleModel: document.getElementById("vehicleModel").value,
-      vehicleYear: document.getElementById("vehicleYear").value,
-      vehicleStatus: document.getElementById("vehicleStatus").value,
-      chassis: document.getElementById("chassisNumber").value,
-      address: document.getElementById("fullAddress").value,
-      contactName: document.getElementById("contactName").value,
-      contactPhone: document.getElementById("contactPhone").value,
-      inspectionStatus: "Pending",
-      paymentStatus: "Unpaid"
-    };
+    const selectedAgentName = document.getElementById("agentSelect").value;
+    const agentData = adminAgents.find(a => a.name === selectedAgentName) || {};
 
     try {
+      let finalReceiptUrl = null;
+      const fileInput = document.getElementById('receiptFile');
+      
+      if (fileInput.files.length > 0) {
+        const file = fileInput.files[0];
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("upload_preset", cloudinaryUploadPreset);
+
+        const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudinaryCloudName}/auto/upload`, {
+          method: "POST",
+          body: formData
+        });
+        const uploadData = await uploadRes.json();
+        finalReceiptUrl = uploadData.secure_url;
+      }
+
+      const newRecord = {
+        requestDate: document.getElementById("requestDate").value,
+        requestorName: document.getElementById("requestorName").value,
+        state: document.getElementById("inspectionState").value,
+        agent: selectedAgentName,
+        vehicleBrand: document.getElementById("vehicleBrand").value,
+        vehicleModel: document.getElementById("vehicleModel").value,
+        vehicleYear: document.getElementById("vehicleYear").value,
+        vehicleStatus: document.getElementById("vehicleStatus").value,
+        chassis: document.getElementById("chassisNumber").value,
+        address: document.getElementById("fullAddress").value,
+        contactName: document.getElementById("contactName").value,
+        contactPhone: document.getElementById("contactPhone").value,
+        inspectionStatus: "Pending",
+        paymentStatus: "Unpaid",
+        receiptUrl: finalReceiptUrl
+      };
+
       await db.collection('inspections').add(newRecord);
       
-      if (targetEmail) {
+      if (agentData.email) {
         emailjs.send(emailJsConfig.serviceId, emailJsConfig.templateId, {
-          agent_email: targetEmail,
+          agent_email: agentData.email,
           client_name: newRecord.requestorName,
           vehicle: `${newRecord.vehicleBrand} ${newRecord.vehicleModel} (${newRecord.vehicleYear})`,
           status: newRecord.vehicleStatus,
@@ -213,7 +242,7 @@
       document.getElementById('paymentModal').classList.add('hidden');
       document.getElementById('successModal').classList.remove('hidden');
     } catch (err) {
-      alert("Error saving record. Please check your connection.");
+      alert("Error processing submission. Check your internet connection.");
       btn.textContent = "Continue & Submit";
       btn.disabled = false;
     }
