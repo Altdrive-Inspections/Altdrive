@@ -92,8 +92,8 @@
     <div style="background:#f1f5f9; padding:14px; border-radius:6px; margin-bottom:16px;">
       <div style="font-size:12px; color:#64748b; font-weight:600; text-transform:uppercase;">Total Inspection Fee</div>
       <div style="font-size:22px; font-weight:700; color:var(--primary); margin:4px 0;" id="totalAmountDue">₦40,000.00</div>
-      <div style="font-size:13px; color:#334155; font-weight:600;">Alternative Bank Limited(AltBank): 0505420261</div>
-      <div style="font-size:12px; color:#64748b;">Sterling Alternative Finance(AltDrive Collections)</div>
+      <div style="font-size:13px; color:#334155; font-weight:600;">The Alternative Bank(AltBank): 0505420261</div>
+      <div style="font-size:12px; color:#64748b;">Sterling Alternative Finance</div>
     </div>
     
     <div style="text-align:left; margin-bottom:20px;">
@@ -284,10 +284,11 @@
       const contactPhone = document.getElementById("contactPhone").value;
 
       const batch = db.batch();
-      vehicles.forEach(v => {
+      vehicles.forEach((v, index) => {
         const docRef = db.collection('inspections').doc();
         batch.set(docRef, {
           batchId: batchId,
+          createdAt: Date.now() + index, 
           requestDate: requestDate,
           requestorName: requestorName,
           requestorEmail: requestorEmail,
