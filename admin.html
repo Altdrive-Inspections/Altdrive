@@ -233,6 +233,21 @@
     db.collection('inspections').orderBy('requestDate', 'desc').onSnapshot(snapshot => {
       records = [];
       snapshot.forEach(doc => records.push({ id: doc.id, ...doc.data() }));
+      
+      records.sort((a, b) => {
+        const dateA = new Date(a.requestDate).getTime();
+        const dateB = new Date(b.requestDate).getTime();
+        if (dateA !== dateB) return dateB - dateA;
+        
+        const timeA = a.createdAt || (a.batchId ? parseInt(a.batchId.split('-')[1]) : 0) || 0;
+        const timeB = b.createdAt || (b.batchId ? parseInt(b.batchId.split('-')[1]) : 0) || 0;
+        
+        if (a.batchId && a.batchId === b.batchId) {
+           return timeA - timeB; 
+        }
+        return timeB - timeA;
+      });
+
       renderDashboard();
       renderUnpaidLedger();
     });
@@ -512,6 +527,8 @@
       const payStatus = r.paymentStatus || "Unpaid";
       let gradeBadge = r.grade === "Pass" ? `<span class="badge badge-pass">${r.score}% Pass</span>` : r.grade === "Fail" ? `<span class="badge badge-fail">${r.score}% Fail</span>` : (r.grade || "N/A");
       
+      const batchBadge = r.batchId ? `<div style="font-size:10px; background:#e2e8f0; color:#475569; padding:2px 6px; border-radius:4px; margin-top:4px; display:inline-block; font-weight:600; letter-spacing:0.5px;">Ref: ${r.batchId.replace('BATCH-', '')}</div>` : '';
+      
       let docsHtml = "";
       if (r.receiptUrl) {
         docsHtml += `<div style="display:inline-flex; align-items:center; margin-right:4px; margin-bottom:4px;"><a href="${r.receiptUrl}" target="_blank" class="btn-action" style="background:#dcfce7; margin-right:0; border-top-right-radius:0; border-bottom-right-radius:0;">Receipt</a><button onclick="confirmDeleteFile('${r.id}', 'receipt')" class="btn-action" style="background:#fee2e2; color:#991b1b; border-left:none; margin-left:0; border-top-left-radius:0; border-bottom-left-radius:0; padding:6px 6px;">✕</button></div>`;
@@ -531,7 +548,7 @@
         : `<button class="btn-action" onclick="updateStatus('${r.id}', 'paymentStatus', 'Unpaid')">Mark Unpaid</button>`;
 
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${r.requestDate}</td><td>${r.requestorName}</td><td>${r.vehicleBrand || ''} ${r.vehicleModel || ''}</td><td>${r.state}</td><td>${r.agent}</td><td>${gradeBadge}</td><td>${r.turnaroundTime || "N/A"}</td><td><span class="badge ${inspStatus==='Completed'?'badge-paid':'badge-pending'}">${inspStatus}</span></td><td>${docsHtml}</td><td>${inspBtn}${payBtn}</td>`;
+      tr.innerHTML = `<td>${r.requestDate}${batchBadge}</td><td>${r.requestorName}</td><td>${r.vehicleBrand || ''} ${r.vehicleModel || ''}</td><td>${r.state}</td><td>${r.agent}</td><td>${gradeBadge}</td><td>${r.turnaroundTime || "N/A"}</td><td><span class="badge ${inspStatus==='Completed'?'badge-paid':'badge-pending'}">${inspStatus}</span></td><td>${docsHtml}</td><td>${inspBtn}${payBtn}</td>`;
       tbody.appendChild(tr);
     });
   }
@@ -545,11 +562,12 @@
       if (!p) return;
       const grossRemainder = 40000 - p.fee;
       const desc = `BNG PAYMENT FOR ${r.vehicleYear || ''} ${(r.vehicleBrand || '').toUpperCase()} ${(r.vehicleModel || '').toUpperCase()}`;
+      const batchBadge = r.batchId ? ` | Ref: ${r.batchId.replace('BATCH-', '')}` : '';
       
       const block = document.createElement("div");
       block.className = "ledger-block";
       block.innerHTML = `
-        <div class="ledger-header"><input type="checkbox" class="batch-pay-checkbox" value="${r.id}" style="margin-right:12px;">${r.vehicleBrand || ''} ${r.vehicleModel || ''} (${r.chassis || ''}) | ${p.name}</div>
+        <div class="ledger-header"><input type="checkbox" class="batch-pay-checkbox" value="${r.id}" style="margin-right:12px;">${r.vehicleBrand || ''} ${r.vehicleModel || ''} (${r.chassis || ''}) | ${p.name}${batchBadge}</div>
         <table>
           <thead><tr><th>ENTRY</th><th>ACCOUNT</th><th>ACCOUNT NAME</th><th>BANK</th><th>AMOUNT (NGN)</th><th>DESCRIPTION</th></tr></thead>
           <tbody>
@@ -570,7 +588,9 @@
       const p = agents.find(a => a.name === r.agent);
       if (!p) return;
       const grossRemainder = 40000 - p.fee;
-      const desc = `BNG PAYMENT FOR ${r.vehicleYear || ''} ${(r.vehicleBrand || '').toUpperCase()} ${(r.vehicleModel || '').toUpperCase()}`;
+      const batchRef = r.batchId ? ` (Ref: ${r.batchId.replace('BATCH-', '')})` : '';
+      const desc = `BNG PAYMENT FOR ${r.vehicleYear || ''} ${(r.vehicleBrand || '').toUpperCase()} ${(r.vehicleModel || '').toUpperCase()}${batchRef}`;
+      
       rows.push({ Entry:"Dr", Account:"0505420261", "Account Name":"ALTDRIVE COLLECTION", Bank:"ALTBANK", "Amount (NGN)":40000, Description:desc });
       rows.push({ Entry:"Cr", Account:p.account, "Account Name":p.ledgerName, Bank:p.bank, "Amount (NGN)":p.fee, Description:desc });
       rows.push({ Entry:"Cr", Account:"1/566/430326/0/10", "Account Name":"ALTDRIVE COMMISSION", Bank:"-", "Amount (NGN)":(grossRemainder - Math.round(grossRemainder * 0.02)), Description:"BNG COMMISSION" });
