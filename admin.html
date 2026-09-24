@@ -29,6 +29,7 @@
     input, select { padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; outline: none; width:100%; }
     .btn-submit { background-color: var(--primary); color: #ffffff; border: none; padding: 10px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; }
     .btn-action { background-color: #f1f5f9; color: #0f172a; border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer; text-decoration: none; display:inline-block; margin:2px; }
+    .btn-action:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-print { background-color: #0f172a; color: #ffffff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; margin-bottom: 16px; }
     .filter-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
     .analytics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
@@ -54,7 +55,7 @@
     #loginBox { background:#fff; border:1px solid var(--border); border-radius:10px; padding:26px; max-width:340px; width:100%; }
     .modal-overlay { position: fixed; inset:0; background: rgba(15,23,42,0.5); display:flex; align-items:center; justify-content:center; z-index:200; padding:16px; overflow-y:auto; }
     .modal-box { background:#fff; border-radius:10px; padding:22px; width:100%; max-width:400px; margin:auto; }
-    @media print { body * { visibility: hidden; } #print-area, #print-area * { visibility: visible; } #print-area { position: absolute; left: 0; top: 0; width: 100%; } header, nav, .btn-print, .btn-action, .card > div:first-child, .ledger-header input { display: none !important; } @page { size: A4 landscape; margin: 15mm; } }
+    @media print { body * { visibility: hidden; } #print-area, #print-area * { visibility: visible; } #print-area { position: absolute; left: 0; top: 0; width: 100%; } header, nav, .btn-print, .btn-action, .card > div:first-child, .ledger-header input, #pagination-controls { display: none !important; } @page { size: A4 landscape; margin: 15mm; } }
   </style>
 </head>
 <body>
@@ -97,6 +98,12 @@
           <thead><tr><th>Date</th><th>RM</th><th>Vehicle</th><th>State</th><th>Agent</th><th>Grade</th><th>TAT</th><th>Status</th><th>Docs</th><th>Actions</th></tr></thead>
           <tbody id="records-table-body"></tbody>
         </table>
+      </div>
+      
+      <div id="pagination-controls" style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; padding: 4px 8px;">
+        <button class="btn-action" id="prevBtn" onclick="changePage(-1)">Previous</button>
+        <span id="page-indicator" style="font-size:13px; font-weight:600; color:#475569;">Page 1 of 1</span>
+        <button class="btn-action" id="nextBtn" onclick="changePage(1)">Next</button>
       </div>
     </div>
 
@@ -199,6 +206,11 @@
   let chartInstance = null;
   let currentEditId = null;
   let fileToDelete = null;
+  
+  let currentPage = 1;
+  const rowsPerPage = 10;
+  let lastSearch = "";
+  let lastAgentFilter = "";
 
   function toast(msg){ const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 2200); }
 
@@ -437,12 +449,25 @@
     toast(`${checkboxes.length} records marked as paid.`);
   }
 
+  function changePage(step) {
+    currentPage += step;
+    renderDashboard();
+  }
+
   function renderDashboard() {
     const searchTerm = document.getElementById("searchFilter").value.toLowerCase();
     const agentFilter = document.getElementById("agentFilter").value;
 
+    if (searchTerm !== lastSearch || agentFilter !== lastAgentFilter) {
+      currentPage = 1;
+      lastSearch = searchTerm;
+      lastAgentFilter = agentFilter;
+    }
+
     const filteredRecords = records.filter(r => {
-      const matchesSearch = !searchTerm || r.chassis.toLowerCase().includes(searchTerm) || r.vehicleBrand.toLowerCase().includes(searchTerm);
+      const chassisStr = (r.chassis || "").toLowerCase();
+      const brandStr = (r.vehicleBrand || "").toLowerCase();
+      const matchesSearch = !searchTerm || chassisStr.includes(searchTerm) || brandStr.includes(searchTerm);
       const matchesAgent = !agentFilter || r.agent === agentFilter;
       return matchesSearch && matchesAgent;
     });
@@ -469,9 +494,20 @@
       options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
     });
 
+    const totalPages = Math.ceil(filteredRecords.length / rowsPerPage) || 1;
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+
+    const startIndex = (currentPage - 1) * rowsPerPage;
+    const paginatedRecords = filteredRecords.slice(startIndex, startIndex + rowsPerPage);
+
+    document.getElementById("page-indicator").textContent = `Page ${currentPage} of ${totalPages}`;
+    document.getElementById("prevBtn").disabled = currentPage === 1;
+    document.getElementById("nextBtn").disabled = currentPage === totalPages;
+
     const tbody = document.getElementById("records-table-body");
     tbody.innerHTML = "";
-    filteredRecords.forEach(r => {
+    paginatedRecords.forEach(r => {
       const inspStatus = r.inspectionStatus || "Pending";
       const payStatus = r.paymentStatus || "Unpaid";
       let gradeBadge = r.grade === "Pass" ? `<span class="badge badge-pass">${r.score}% Pass</span>` : r.grade === "Fail" ? `<span class="badge badge-fail">${r.score}% Fail</span>` : (r.grade || "N/A");
@@ -495,7 +531,7 @@
         : `<button class="btn-action" onclick="updateStatus('${r.id}', 'paymentStatus', 'Unpaid')">Mark Unpaid</button>`;
 
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${r.requestDate}</td><td>${r.requestorName}</td><td>${r.vehicleBrand} ${r.vehicleModel}</td><td>${r.state}</td><td>${r.agent}</td><td>${gradeBadge}</td><td>${r.turnaroundTime || "N/A"}</td><td><span class="badge ${inspStatus==='Completed'?'badge-paid':'badge-pending'}">${inspStatus}</span></td><td>${docsHtml}</td><td>${inspBtn}${payBtn}</td>`;
+      tr.innerHTML = `<td>${r.requestDate}</td><td>${r.requestorName}</td><td>${r.vehicleBrand || ''} ${r.vehicleModel || ''}</td><td>${r.state}</td><td>${r.agent}</td><td>${gradeBadge}</td><td>${r.turnaroundTime || "N/A"}</td><td><span class="badge ${inspStatus==='Completed'?'badge-paid':'badge-pending'}">${inspStatus}</span></td><td>${docsHtml}</td><td>${inspBtn}${payBtn}</td>`;
       tbody.appendChild(tr);
     });
   }
@@ -508,12 +544,12 @@
       const p = agents.find(a => a.name === r.agent);
       if (!p) return;
       const grossRemainder = 40000 - p.fee;
-      const desc = `BNG PAYMENT FOR ${r.vehicleYear} ${r.vehicleBrand.toUpperCase()} ${r.vehicleModel.toUpperCase()}`;
+      const desc = `BNG PAYMENT FOR ${r.vehicleYear || ''} ${(r.vehicleBrand || '').toUpperCase()} ${(r.vehicleModel || '').toUpperCase()}`;
       
       const block = document.createElement("div");
       block.className = "ledger-block";
       block.innerHTML = `
-        <div class="ledger-header"><input type="checkbox" class="batch-pay-checkbox" value="${r.id}" style="margin-right:12px;">${r.vehicleBrand} ${r.vehicleModel} (${r.chassis}) | ${p.name}</div>
+        <div class="ledger-header"><input type="checkbox" class="batch-pay-checkbox" value="${r.id}" style="margin-right:12px;">${r.vehicleBrand || ''} ${r.vehicleModel || ''} (${r.chassis || ''}) | ${p.name}</div>
         <table>
           <thead><tr><th>ENTRY</th><th>ACCOUNT</th><th>ACCOUNT NAME</th><th>BANK</th><th>AMOUNT (NGN)</th><th>DESCRIPTION</th></tr></thead>
           <tbody>
@@ -534,7 +570,7 @@
       const p = agents.find(a => a.name === r.agent);
       if (!p) return;
       const grossRemainder = 40000 - p.fee;
-      const desc = `BNG PAYMENT FOR ${r.vehicleYear} ${r.vehicleBrand.toUpperCase()} ${r.vehicleModel.toUpperCase()}`;
+      const desc = `BNG PAYMENT FOR ${r.vehicleYear || ''} ${(r.vehicleBrand || '').toUpperCase()} ${(r.vehicleModel || '').toUpperCase()}`;
       rows.push({ Entry:"Dr", Account:"0505420261", "Account Name":"ALTDRIVE COLLECTION", Bank:"ALTBANK", "Amount (NGN)":40000, Description:desc });
       rows.push({ Entry:"Cr", Account:p.account, "Account Name":p.ledgerName, Bank:p.bank, "Amount (NGN)":p.fee, Description:desc });
       rows.push({ Entry:"Cr", Account:"1/566/430326/0/10", "Account Name":"ALTDRIVE COMMISSION", Bank:"-", "Amount (NGN)":(grossRemainder - Math.round(grossRemainder * 0.02)), Description:"BNG COMMISSION" });
