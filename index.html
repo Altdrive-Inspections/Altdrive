@@ -114,6 +114,7 @@
   <div class="modal-box">
     <h3 style="color:#166534;">Request Logged Successfully</h3>
     <p>Your inspection request has been logged. The inspection should be carried out within 48 hours.</p>
+    <p style="font-size:13px; color:#475569; margin-bottom:14px;"><em>*Please note: Turnaround times may vary based on distance and the number of vehicles requested, especially for locations outside Abuja and Lagos.</em></p>
     <p style="font-size:13px;">If it exceeds this timeframe, kindly reach out to <strong>info@altdrive.ng</strong> and put <strong>adedamola.bello@altbank.ng and emmanuel.ogude2@altbank.ng</strong> in copy.</p>
     <button class="btn-submit" onclick="location.reload()">Close</button>
   </div>
@@ -311,13 +312,19 @@
       await batch.commit();
 
       if (agentData.email) {
+        const vehicleCount = vehicles.length;
+        const dynamicSubject = vehicleCount > 1 
+          ? `Inspection Request: ${vehicleCount} Vehicles` 
+          : `Inspection Request: ${vehicles[0].year} ${vehicles[0].brand} ${vehicles[0].model}`;
+
         const summary = vehicles.map((v, i) => `${i + 1}. ${v.year} ${v.brand} ${v.model} (${v.status}) | Chassis: ${v.chassis}`).join('\n');
         emailjs.send(emailJsConfig.serviceId, emailJsConfig.templateId, {
           agent_email: agentData.email,
           client_name: requestorName,
+          email_subject: dynamicSubject,
           vehicle: summary,
-          status: vehicles.length > 1 ? "Multiple Vehicles" : vehicles[0].status,
-          chassis: vehicles.length > 1 ? "Listed in summary" : vehicles[0].chassis,
+          status: vehicleCount > 1 ? "Multiple Vehicles" : vehicles[0].status,
+          chassis: vehicleCount > 1 ? "Listed in summary" : vehicles[0].chassis,
           address: address,
           contact_name: contactName,
           contact_phone: contactPhone
